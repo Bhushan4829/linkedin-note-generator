@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "LinkedIn Note Generator",
+  "version": "0.1",
+  "description": "Generate LinkedIn connection notes in 1 click (≤300 chars)",
+  "permissions": ["scripting", "activeTab"],
+  "host_permissions": [
+    "https://www.linkedin.com/in/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

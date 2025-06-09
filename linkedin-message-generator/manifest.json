@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "LinkedIn Note Generator",
+  "version": "0.1",
+  "description": "Generate LinkedIn connection notes in 1 click (≤300 chars)",
+  "permissions": ["scripting", "activeTab","storage","identity"],
+  "host_permissions": [
+    "https://www.linkedin.com/in/*",
+    "https://*.supabase.co/*",
+    "https://accounts.google.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "web_accessible_resources": [{
+    "resources": ["auth.html", "auth.js"],
+    "matches": ["https://*.chromiumapp.org/*"]
+  }],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
