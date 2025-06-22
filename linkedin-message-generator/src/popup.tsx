@@ -655,7 +655,7 @@ const Popup: React.FC = () => {
       return "Missing access token. Please log in again.";
     }
 
-    const response = await fetch("http://localhost:8000/generate_message", {
+    const response = await fetch("https://d0633fcf28ede45a1932e5b3e0d4fd395.clg07azjl.paperspacegradient.com/generate_message", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

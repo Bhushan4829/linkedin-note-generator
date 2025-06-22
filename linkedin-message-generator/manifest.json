@@ -7,7 +7,8 @@
   "host_permissions": [
     "https://www.linkedin.com/in/*",
     "https://*.supabase.co/*",
-    "https://accounts.google.com/*"
+    "https://accounts.google.com/*",
+    "https://*.paperspace.io/*"
   ],
   "action": {
     "default_popup": "popup.html"
