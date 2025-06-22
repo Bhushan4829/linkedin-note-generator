@@ -1,3 +1,6 @@
 linkedin-message-generator/.env
 linkedin-message-generator/src/.env
 backend/.env
+dashboard/src/.env
+dashboard/.env
+dashboard/.env.local
