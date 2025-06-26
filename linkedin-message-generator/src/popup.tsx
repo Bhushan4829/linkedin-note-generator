@@ -424,14 +424,32 @@ import React, { useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { supabase } from "./supabaseClient";
 import { User } from '@supabase/supabase-js';
-
+import { TemplateManager } from './templateManager';
 // Helper: Scrape LinkedIn
 function scrapeLinkedInProfile(): { name: string; headline: string } {
   const name = document.querySelector("h1")?.textContent?.trim() || "";
   const headline = document.querySelector(".text-body-medium.break-words")?.textContent?.trim() || "";
   return { name, headline };
 }
+// Add these helper functions at the top of popup.tsx
+const STORAGE_KEY = 'message_history';
 
+async function saveMessagesToStorage(messages: any) {
+  await chrome.storage.local.set({ [STORAGE_KEY]: messages });
+}
+
+async function loadMessagesFromStorage() {
+  const result = await chrome.storage.local.get(STORAGE_KEY);
+  return result[STORAGE_KEY] || {
+    note: "",
+    email: "",
+    inmail: "",
+    profile: { name: "", headline: "" },
+    jobdesc: "",
+    customPrompt: "",
+    additionalContext: ""
+  };
+}
 const Popup: React.FC = () => {
   // Auth state
   const [email, setEmail] = useState('');
@@ -451,16 +469,27 @@ const Popup: React.FC = () => {
   const [customPrompt, setCustomPrompt] = useState("");
   const [additionalContext, setAdditionalContext] = useState("");
   // Auth check on mount
+  // Update the useEffect hook to load saved messages
   useEffect(() => {
-  (async () => {
-    const { supabase_session } = await chrome.storage.local.get('supabase_session');
-    if (supabase_session && supabase_session.access_token && supabase_session.refresh_token) {
-      await supabase.auth.setSession(supabase_session);
-    }
-    const { data: { user } } = await supabase.auth.getUser();
-    setUser(user);
-  })();
-}, []);
+    (async () => {
+      const { supabase_session } = await chrome.storage.local.get('supabase_session');
+      if (supabase_session && supabase_session.access_token && supabase_session.refresh_token) {
+        await supabase.auth.setSession(supabase_session);
+      }
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+      
+      // Load saved messages
+      const savedData = await loadMessagesFromStorage();
+      setProfile(savedData.profile);
+      setJobdesc(savedData.jobdesc);
+      setNote(savedData.note);
+      setEmailDraft(savedData.email);
+      setInmail(savedData.inmail);
+      setCustomPrompt(savedData.customPrompt);
+      setAdditionalContext(savedData.additionalContext);
+    })();
+  }, []);
 
   // Auth Handlers
   const handleLogin = async () => {
@@ -540,11 +569,15 @@ const Popup: React.FC = () => {
 };
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    await chrome.storage.local.remove(STORAGE_KEY); // Clear message history
     setUser(null);
     setProfile({ name: "", headline: "" });
     setNote("");
     setEmailDraft("");
     setInmail("");
+    setJobdesc("");
+    setCustomPrompt("");
+    setAdditionalContext("");
   };
   if (!user) {
     return (
@@ -648,6 +681,14 @@ const Popup: React.FC = () => {
   additionalContext: string = ""
 ): Promise<string> {
   try {
+    const {data: templateData, error: templateError} = await supabase
+      .from('templates')
+      .select('content')
+      .eq('type', type)
+      .eq('user_id', userId)
+      .eq('is-default', true)
+      .single();
+    const templateContent = templateData?.content || '';
     const { supabase_session } = await chrome.storage.local.get('supabase_session');
     const access_token = supabase_session?.access_token;
 
@@ -669,6 +710,7 @@ const Popup: React.FC = () => {
         jobdesc_text: jobdescText,
         custom_prompt: customPrompt,
         additional_context: additionalContext,
+        template: templateContent
       }),
     });
     if (!response.ok) {
@@ -686,35 +728,49 @@ const Popup: React.FC = () => {
 
   // Handle message generation
   const handleClick = async (type: "note" | "email" | "inmail") => {
-    setError("");
-    setLoading(type);
-    try {
-      const { name, headline } = await getProfile();
-      setProfile({ name, headline });
+  setError("");
+  setLoading(type);
+  try {
+    const { name, headline } = await getProfile();
+    setProfile({ name, headline });
 
-      if (!user) {
-        setError("Please log in first.");
-        setLoading("none");
-        return;
-      }
-      if (type === "note") {
+    if (!user) {
+      setError("Please log in first.");
+      setLoading("none");
+      return;
+    }
+
+    let res = "";
+    if (type === "note") {
       setNote("Generating...");
-      const res = await fetchDraft(type, name, headline, user.id, jobdesc, customPrompt, additionalContext);
+      res = await fetchDraft(type, name, headline, user.id, jobdesc, customPrompt, additionalContext);
       setNote(res);
     } else if (type === "email") {
       setEmailDraft("Generating...");
-      const res = await fetchDraft(type, name, headline, user.id, jobdesc, customPrompt, additionalContext);
+      res = await fetchDraft(type, name, headline, user.id, jobdesc, customPrompt, additionalContext);
       setEmailDraft(res);
     } else if (type === "inmail") {
       setInmail("Generating...");
-      const res = await fetchDraft(type, name, headline, user.id, jobdesc, customPrompt, additionalContext);
+      res = await fetchDraft(type, name, headline, user.id, jobdesc, customPrompt, additionalContext);
       setInmail(res);
     }
-    } catch (err: any) {
-      setError(err);
-    }
-    setLoading("none");
-  };
+
+    // Save all current state to storage
+    await saveMessagesToStorage({
+      note: type === "note" ? res : note,
+      email: type === "email" ? res : emailDraft,
+      inmail: type === "inmail" ? res : inmail,
+      profile: { name, headline },
+      jobdesc,
+      customPrompt,
+      additionalContext
+    });
+
+  } catch (err: any) {
+    setError(err);
+  }
+  setLoading("none");
+};
 
   // UI
   if (!user) {
@@ -795,22 +851,55 @@ const Popup: React.FC = () => {
         <label style={{ fontWeight: 500 }}>Job Description (optional):</label>
         <textarea
           value={jobdesc}
-          onChange={e => setJobdesc(e.target.value)}
+          onChange={async (e) => {
+            setJobdesc(e.target.value);
+            await saveMessagesToStorage({
+              note,
+              email: emailDraft,
+              inmail,
+              profile,
+              jobdesc: e.target.value,
+              customPrompt,
+              additionalContext
+            });
+          }}
           rows={3}
           placeholder="Paste job description here (optional, improves personalization)"
           style={{ width: "100%", borderRadius: 5, border: "1px solid #bbb", marginTop: 2, marginBottom: 6, padding: 6, fontSize: 14 }}
         />
         <textarea
-        value={customPrompt}
-        onChange={e => setCustomPrompt(e.target.value)}
-        rows={2}
-        placeholder="Custom prompt (optional, overrides saved prompt for this run)"
-        style={{ width: "100%", borderRadius: 5, border: "1px solid #bbb", marginTop: 2, marginBottom: 6, padding: 6, fontSize: 14 }}
+          value={customPrompt}
+          onChange={async (e) => {
+            setCustomPrompt(e.target.value);
+            await saveMessagesToStorage({
+              note,
+              email: emailDraft,
+              inmail,
+              profile,
+              jobdesc,
+              customPrompt: e.target.value,
+              additionalContext
+            });
+          }}
+          rows={2}
+          placeholder="Custom prompt (optional, overrides saved prompt for this run)"
+          style={{ width: "100%", borderRadius: 5, border: "1px solid #bbb", marginTop: 2, marginBottom: 6, padding: 6, fontSize: 14 }}
 
       />
       <textarea
         value={additionalContext}
-        onChange={e => setAdditionalContext(e.target.value)}
+        onChange={async (e) => {
+          setAdditionalContext(e.target.value);
+          await saveMessagesToStorage({
+            note,
+            email: emailDraft,
+            inmail,
+            profile,
+            jobdesc,
+            customPrompt,
+            additionalContext: e.target.value
+          });
+        }}
         rows={2}
         placeholder="Additional context (optional, will be added to message context)"
         style={{ width: "100%", borderRadius: 5, border: "1px solid #bbb", marginTop: 2, marginBottom: 6, padding: 6, fontSize: 14 }}
@@ -886,6 +975,7 @@ const Popup: React.FC = () => {
         )}
         {!profile.name && <>Navigate to a LinkedIn profile page and click a button above.</>}
       </div>
+        {user && <TemplateManager user={user} />}
     </div>
   );
 };
