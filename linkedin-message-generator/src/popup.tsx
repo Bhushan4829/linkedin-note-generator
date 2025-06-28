@@ -425,6 +425,7 @@ import { createRoot } from "react-dom/client";
 import { supabase } from "./supabaseClient";
 import { User } from '@supabase/supabase-js';
 import { TemplateManager } from './templateManager';
+import { generateViaChatGPT, PersonalizationInputs, buildQuestion} from './personalization';
 // Helper: Scrape LinkedIn
 function scrapeLinkedInProfile(): { name: string; headline: string } {
   const name = document.querySelector("h1")?.textContent?.trim() || "";
@@ -670,7 +671,9 @@ const Popup: React.FC = () => {
       });
     });
 
+
   // Backend call (single endpoint)
+   
   async function fetchDraft(
   type: "note" | "email" | "inmail",
   name: string,
@@ -695,7 +698,17 @@ const Popup: React.FC = () => {
     if (!access_token) {
       return "Missing access token. Please log in again.";
     }
+    const inputs: PersonalizationInputs = {
+      type,
+      template: templateData?.content || '',
+      profile: { name, headline },
+      jobdesc: jobdescText,
+      customPrompt,
+      additionalContext
+    };
 
+    // Let generateViaChatGPT handle the question building
+    const vectorContext = await generateViaChatGPT(inputs);
     const response = await fetch("https://message-backend-v1.onrender.com/generate_message", {
       method: "POST",
       headers: {
@@ -709,7 +722,7 @@ const Popup: React.FC = () => {
         message_type: type,
         jobdesc_text: jobdescText,
         custom_prompt: customPrompt,
-        additional_context: additionalContext,
+        additional_context: [additionalContext, vectorContext].filter(Boolean).join("\n\n"),
         template: templateContent
       }),
     });
