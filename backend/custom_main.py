@@ -410,5 +410,7 @@ async def generate_message(request: MessageRequest, authorization: str = Header(
     except Exception as e:
         logger.error(f"Error in generate_message: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
-
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
     # return {req.message_type: result}
